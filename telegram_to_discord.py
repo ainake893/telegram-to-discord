@@ -18,12 +18,13 @@ client = TelegramClient(StringSession(session_string), api_id, api_hash)
 
 # --- Discord Webhook ---
 webhooks = {
-    "KudasaiJP_summary": os.getenv("WEBHOOK_KUDASAI_SUMMARY"),
-    "KudasaiJP_full": os.getenv("WEBHOOK_KUDASAI_FULL"),
-    "Basedshills28": os.getenv("WEBHOOK_BASEDSHILLS"),
-    "zeegeneracy": os.getenv("WEBHOOK_ZEGENERACY"),
-    "PowsGemCalls": os.getenv("WEBHOOK_POWSGEMCALLS")
+    "KudasaiJP_summary": os.getenv("DISCORD_WEBHOOK_KUDASAI_SUMMARY"),
+    "KudasaiJP_full": os.getenv("DISCORD_WEBHOOK_KUDASAI_FULL"),
+    "Basedshills28": os.getenv("DISCORD_WEBHOOK_BASEDSHILLS28"),
+    "zeegeneracy": os.getenv("DISCORD_WEBHOOK_ZEGENERACY"),
+    "PowsGemCalls": os.getenv("DISCORD_WEBHOOK_POWSGEMCALLS")
 }
+
 
 channels = ["KudasaiJP", "Basedshills28", "zeegeneracy", "PowsGemCalls"]
 
