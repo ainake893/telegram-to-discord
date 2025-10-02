@@ -1,4 +1,5 @@
 from telethon import TelegramClient
+from telethon.sessions import StringSession
 import requests
 import re
 import os
@@ -11,8 +12,9 @@ load_dotenv()
 
 # --- Telegram API ---
 api_id = int(os.getenv("TG_API_ID"))
-api_hash = os.getenv("TG_API_HASH")
-client = TelegramClient("my_session", api_id, api_hash)
+api_hash = os.getenv("TG_API_HASH"))
+session_string = os.getenv("SESSION_STRING")
+client = TelegramClient(StringSession(session_string), api_id, api_hash)
 
 # --- Discord Webhook ---
 webhooks = {
@@ -68,22 +70,18 @@ async def main():
                 formatted = f"[{formatted_time}] @{sender}: {message.text}"
                 messages.append((message.id, formatted, message.text, formatted_time, sender))
 
-        # 古い順に並び替え
         messages.sort(key=lambda x: x[0])
 
         if channel == "KudasaiJP":
-            # --- 要約（キーワード抜き出し） ---
             summaries = [auto_summary(m[2], m[3], m[4]) for m in messages]
             summaries = [s for s in summaries if s]
             if summaries:
                 requests.post(webhooks["KudasaiJP_summary"], json={"content": "\n".join(summaries[:30])})
 
-            # --- 全文まとめ ---
             full_text = "\n\n".join([m[1] for m in messages])
             if full_text:
                 requests.post(webhooks["KudasaiJP_full"], json={"content": full_text[:1900]})
         else:
-            # --- 翻訳付き送信（日時＋送信者付き） ---
             for _, _, text, formatted_time, sender in messages:
                 translated = translate(text)
                 content = f"[{formatted_time}] @{sender}:\n{translated}"
