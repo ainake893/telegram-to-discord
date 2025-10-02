@@ -12,7 +12,7 @@ load_dotenv()
 
 # --- Telegram API ---
 api_id = int(os.getenv("TG_API_ID"))
-api_hash = os.getenv("TG_API_HASH"))
+api_hash = os.getenv("TG_API_HASH")
 session_string = os.getenv("SESSION_STRING")
 client = TelegramClient(StringSession(session_string), api_id, api_hash)
 
