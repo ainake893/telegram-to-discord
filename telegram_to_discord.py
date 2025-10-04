@@ -4,7 +4,7 @@ import requests
 import re
 import os
 from datetime import timezone, timedelta
-from googletrans import Translator
+from deep_translator import GoogleTranslator  # ← DeepLではなく無料Google翻訳
 from dotenv import load_dotenv
 
 # --- .env 読み込み ---
@@ -27,17 +27,18 @@ webhooks = {
 
 channels = ["KudasaiJP", "Basedshills28", "zeegeneracy", "PowsGemCalls"]
 
-# --- Google Translate ---
-translator = Translator()
-
-def translate(text):
-    try:
-        return translator.translate(text, src='en', dest='ja').text
-    except Exception:
-        return f"[翻訳エラー] {text[:200]}..."
+# --- 無料翻訳 ---
+translator = GoogleTranslator(source='en', target='ja')
 
 # JSTタイムゾーン
 JST = timezone(timedelta(hours=9))
+
+# --- 翻訳関数 ---
+def translate(text):
+    try:
+        return translator.translate(text)
+    except Exception:
+        return f"[翻訳エラー] {text[:200]}..."
 
 # --- 自動要約関数（キーワード抽出） ---
 def auto_summary(text, dt, sender):
@@ -68,22 +69,18 @@ async def main():
                 formatted = f"[{formatted_time}] @{sender}: {message.text}"
                 messages.append((message.id, formatted, message.text, formatted_time, sender))
 
-        # 古い順に並び替え
         messages.sort(key=lambda x: x[0])
 
         if channel == "KudasaiJP":
-            # --- 要約（キーワード抜き出し） ---
             summaries = [auto_summary(m[2], m[3], m[4]) for m in messages]
             summaries = [s for s in summaries if s]
             if summaries:
                 requests.post(webhooks["KudasaiJP_summary"], json={"content": "\n".join(summaries[:30])})
 
-            # --- 全文まとめ ---
             full_text = "\n\n".join([m[1] for m in messages])
             if full_text:
                 requests.post(webhooks["KudasaiJP_full"], json={"content": full_text[:1900]})
         else:
-            # --- 翻訳付き送信（日時＋送信者付き） ---
             for _, _, text, formatted_time, sender in messages:
                 translated = translate(text)
                 content = f"[{formatted_time}] @{sender}:\n{translated}"
