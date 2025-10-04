@@ -5,7 +5,7 @@ import re
 import os
 import sqlite3
 from datetime import timezone, timedelta
-from deep_translator import GoogleTranslator  # ← 無料Google翻訳
+from deep_translator import GoogleTranslator
 from dotenv import load_dotenv
 
 # --- .env 読み込み ---
@@ -69,10 +69,8 @@ def auto_summary(text, dt, sender):
     )
     sentences = text.split(". ")
     filtered = [s for s in sentences if re.search(keywords, s, re.IGNORECASE)]
-
     pattern = r"\d+(\.\d+)?\s?(BTC|ETH|USDT|ADA)"
     filtered += [m.group(0) for m in re.finditer(pattern, text)]
-
     if filtered:
         return f"[{dt}] @{sender} [要約] " + " | ".join(filtered)
     return ""
@@ -98,6 +96,7 @@ async def main():
         messages.sort(key=lambda x: x[0])
 
         if not messages:
+            print(f"通知なし: {channel} (最終ID {last_id})")
             continue
 
         if channel == "KudasaiJP":
@@ -105,17 +104,21 @@ async def main():
             summaries = [s for s in summaries if s]
             if summaries:
                 requests.post(webhooks["KudasaiJP_summary"], json={"content": "\n".join(summaries[:30])})
+                print(f"KudasaiJP_summary 通知:\n{summaries[:30]}")
 
             full_text = "\n\n".join([m[1] for m in messages])
             if full_text:
                 requests.post(webhooks["KudasaiJP_full"], json={"content": full_text[:1900]})
+                print(f"KudasaiJP_full 通知:\n{full_text[:1900]}")
         else:
             for _, _, text, formatted_time, sender in messages:
                 translated = translate(text)
                 content = f"[{formatted_time}] @{sender}:\n{translated}"
                 requests.post(webhooks[channel], json={"content": content})
+                print(f"{channel} 通知:\n{content[:200]}...")  # 先頭200文字だけ表示
 
         update_last_id(channel, new_last_id)
+        print(f"更新完了: {channel} 最終ID {new_last_id}\n")
 
 # --- 実行 ---
 with client:
