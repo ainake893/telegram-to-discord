@@ -3,8 +3,9 @@ from telethon.sessions import StringSession
 import requests
 import re
 import os
+import sqlite3
 from datetime import timezone, timedelta
-from deep_translator import GoogleTranslator  # ← DeepLではなく無料Google翻訳
+from deep_translator import GoogleTranslator  # ← 無料Google翻訳
 from dotenv import load_dotenv
 
 # --- .env 読み込み ---
@@ -33,6 +34,25 @@ translator = GoogleTranslator(source='en', target='ja')
 # JSTタイムゾーン
 JST = timezone(timedelta(hours=9))
 
+# --- SQLite データベース ---
+DB_PATH = "last_id.db"
+conn = sqlite3.connect(DB_PATH)
+cur = conn.cursor()
+cur.execute("CREATE TABLE IF NOT EXISTS last_ids (channel TEXT PRIMARY KEY, last_id INTEGER)")
+conn.commit()
+
+def get_last_id(channel):
+    cur.execute("SELECT last_id FROM last_ids WHERE channel = ?", (channel,))
+    row = cur.fetchone()
+    return row[0] if row else 0
+
+def update_last_id(channel, last_id):
+    cur.execute(
+        "INSERT OR REPLACE INTO last_ids (channel, last_id) VALUES (?, ?)",
+        (channel, last_id),
+    )
+    conn.commit()
+
 # --- 翻訳関数 ---
 def translate(text):
     try:
@@ -40,7 +60,7 @@ def translate(text):
     except Exception:
         return f"[翻訳エラー] {text[:200]}..."
 
-# --- 自動要約関数（キーワード抽出） ---
+# --- 自動要約関数 ---
 def auto_summary(text, dt, sender):
     keywords = (
         r"entry|long|short|buy|sell|SL|TP|指値|成行|利確|損切り|dip|ロング|ショート|meme|ath|"
@@ -60,16 +80,25 @@ def auto_summary(text, dt, sender):
 # --- メイン処理 ---
 async def main():
     for channel in channels:
+        last_id = get_last_id(channel)
+        new_last_id = last_id
+
         messages = []
         async for message in client.iter_messages(channel, limit=50):
+            if message.id <= last_id:
+                break
             if message.text:
                 jst_time = message.date.astimezone(JST)
                 formatted_time = jst_time.strftime("%Y-%m-%d %H:%M:%S")
                 sender = (await message.get_sender()).username or "Unknown"
                 formatted = f"[{formatted_time}] @{sender}: {message.text}"
                 messages.append((message.id, formatted, message.text, formatted_time, sender))
+                new_last_id = max(new_last_id, message.id)
 
         messages.sort(key=lambda x: x[0])
+
+        if not messages:
+            continue
 
         if channel == "KudasaiJP":
             summaries = [auto_summary(m[2], m[3], m[4]) for m in messages]
@@ -86,6 +115,10 @@ async def main():
                 content = f"[{formatted_time}] @{sender}:\n{translated}"
                 requests.post(webhooks[channel], json={"content": content})
 
+        update_last_id(channel, new_last_id)
+
 # --- 実行 ---
 with client:
     client.loop.run_until_complete(main())
+
+conn.close()
