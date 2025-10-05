@@ -5,7 +5,7 @@ import re
 import os
 import sqlite3
 from datetime import timezone, timedelta
-from deep_translator import GoogleTranslator  # 無料Google翻訳
+from deep_translator import GoogleTranslator  # ← 無料Google翻訳
 from dotenv import load_dotenv
 
 # --- .env 読み込み ---
@@ -34,8 +34,8 @@ translator = GoogleTranslator(source='en', target='ja')
 # JSTタイムゾーン
 JST = timezone(timedelta(hours=9))
 
-# --- SQLite データベース（絶対パス） ---
-DB_PATH = os.path.join(os.path.dirname(__file__), "last_id.db")
+# --- SQLite データベース ---
+DB_PATH = "last_id.db"
 conn = sqlite3.connect(DB_PATH)
 cur = conn.cursor()
 cur.execute("CREATE TABLE IF NOT EXISTS last_ids (channel TEXT PRIMARY KEY, last_id INTEGER)")
@@ -52,7 +52,6 @@ def update_last_id(channel, last_id):
         (channel, last_id),
     )
     conn.commit()
-    print(f"更新完了: {channel} 最終ID {last_id}")  # 確認用ログ
 
 # --- 翻訳関数 ---
 def translate(text):
@@ -101,6 +100,7 @@ async def main():
         if not messages:
             continue
 
+        # --- 各チャンネルごとの処理 ---
         if channel == "KudasaiJP":
             summaries = [auto_summary(m[2], m[3], m[4]) for m in messages]
             summaries = [s for s in summaries if s]
@@ -116,7 +116,9 @@ async def main():
                 content = f"[{formatted_time}] @{sender}:\n{translated}"
                 requests.post(webhooks[channel], json={"content": content})
 
+        # ✅ チャンネルごとに更新を反映
         update_last_id(channel, new_last_id)
+        print(f"更新完了: {channel} → 最終ID {new_last_id}")
 
 # --- 実行 ---
 with client:
