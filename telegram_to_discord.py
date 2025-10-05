@@ -4,8 +4,14 @@ import requests
 import re
 import os
 import sqlite3
+from telethon import TelegramClient
+from telethon.sessions import StringSession
+import requests
+import re
+import os
+import sqlite3
 from datetime import timezone, timedelta
-from deep_translator import GoogleTranslator  # ← 無料Google翻訳
+from deep_translator import GoogleTranslator
 from dotenv import load_dotenv
 
 # --- .env 読み込み ---
@@ -18,20 +24,21 @@ session_string = os.getenv("SESSION_STRING")
 client = TelegramClient(StringSession(session_string), api_id, api_hash)
 
 # --- Discord Webhook ---
+# ✅ あなたの .env に合わせて修正済み
 webhooks = {
-    "KudasaiJP_summary": os.getenv("DISCORD_WEBHOOK_KUDASAI_SUMMARY"),
-    "KudasaiJP_full": os.getenv("DISCORD_WEBHOOK_KUDASAI_FULL"),
-    "Basedshills28": os.getenv("DISCORD_WEBHOOK_BASEDSHILLS28"),
-    "zeegeneracy": os.getenv("DISCORD_WEBHOOK_ZEGENERACY"),
-    "PowsGemCalls": os.getenv("DISCORD_WEBHOOK_POWSGEMCALLS")
+    "KudasaiJP_summary": os.getenv("WEBHOOK_KUDASAI_SUMMARY"),
+    "KudasaiJP_full": os.getenv("WEBHOOK_KUDASAI_FULL"),
+    "Basedshills28": os.getenv("WEBHOOK_BASEDSHILLS"),
+    "zeegeneracy": os.getenv("WEBHOOK_ZEGENERACY"),
+    "PowsGemCalls": os.getenv("WEBHOOK_POWSGEMCALLS")
 }
 
 channels = ["KudasaiJP", "Basedshills28", "zeegeneracy", "PowsGemCalls"]
 
-# --- 無料翻訳 ---
+# --- 翻訳 ---
 translator = GoogleTranslator(source='en', target='ja')
 
-# JSTタイムゾーン
+# --- JSTタイムゾーン ---
 JST = timezone(timedelta(hours=9))
 
 # --- SQLite データベース ---
@@ -100,7 +107,7 @@ async def main():
         if not messages:
             continue
 
-        # --- 各チャンネルごとの処理 ---
+        # --- 各チャンネル送信 ---
         if channel == "KudasaiJP":
             summaries = [auto_summary(m[2], m[3], m[4]) for m in messages]
             summaries = [s for s in summaries if s]
@@ -116,9 +123,9 @@ async def main():
                 content = f"[{formatted_time}] @{sender}:\n{translated}"
                 requests.post(webhooks[channel], json={"content": content})
 
-        # ✅ チャンネルごとに更新を反映
+        # --- 更新ログ ---
         update_last_id(channel, new_last_id)
-        print(f"更新完了: {channel} → 最終ID {new_last_id}")
+        print(f"更新完了: {channel} 最終ID {new_last_id}")
 
 # --- 実行 ---
 with client:
