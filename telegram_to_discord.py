@@ -1,3 +1,5 @@
+import os
+os.system("pip install telethon requests deep-translator python-dotenv googletrans==4.0.0-rc1 > /dev/null 2>&1")
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 import requests
