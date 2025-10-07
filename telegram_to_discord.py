@@ -43,24 +43,20 @@ cur = conn.cursor()
 cur.execute("CREATE TABLE IF NOT EXISTS last_ids (channel TEXT PRIMARY KEY, last_id INTEGER)")
 conn.commit()
 
-
 def get_last_id(channel):
     cur.execute("SELECT last_id FROM last_ids WHERE channel = ?", (channel,))
     row = cur.fetchone()
     return row[0] if row else 0
 
-
 def update_last_id(channel, last_id):
     cur.execute("INSERT OR REPLACE INTO last_ids (channel, last_id) VALUES (?, ?)", (channel, last_id))
     conn.commit()
-
 
 def translate(text):
     try:
         return translator.translate(text)
     except Exception:
         return f"[翻訳エラー] {text[:200]}..."
-
 
 def auto_summary(text, dt, sender):
     keywords = (
@@ -78,7 +74,6 @@ def auto_summary(text, dt, sender):
         return f"[{dt}] @{sender} [要約] " + " | ".join(filtered)
     return ""
 
-
 # --- メイン処理 ---
 async def main():
     for channel in channels:
@@ -95,12 +90,12 @@ async def main():
                 sender = (await message.get_sender()).username or "Unknown"
                 formatted = f"[{formatted_time}] @{sender}: {message.text}"
                 messages.append((message.id, formatted, message.text, formatted_time, sender))
+                new_last_id = max(new_last_id, message.id)
 
         messages.sort(key=lambda x: x[0])
         if not messages:
             continue
 
-        # --- 各チャンネル送信 ---
         if channel == "KudasaiJP":
             summaries = [auto_summary(m[2], m[3], m[4]) for m in messages]
             summaries = [s for s in summaries if s]
@@ -116,24 +111,18 @@ async def main():
                     requests.post(webhooks["KudasaiJP_full"], json={"content": full_text[:1900]})
                 except Exception as e:
                     print(f"❌ Kudasai Full送信失敗: {e}")
-
-            # ✅ 一括送信のあとに更新
-            new_last_id = max(m[0] for m in messages)
-            update_last_id(channel, new_last_id)
-
         else:
-            for msg_id, _, text, formatted_time, sender in messages:
+            for _, _, text, formatted_time, sender in messages:
                 try:
                     translated = translate(text)
                     content = f"[{formatted_time}] @{sender}:\n{translated}"
                     requests.post(webhooks[channel], json={"content": content})
-                    update_last_id(channel, msg_id)  # ✅ 各送信後に即更新
-                    new_last_id = msg_id
                 except Exception as e:
                     print(f"❌ 送信失敗 {channel}: {e}")
 
+        # ✅ ここで一括更新
+        update_last_id(channel, new_last_id)
         print(f"✅ 更新完了: {channel} 最終ID {new_last_id}")
-
 
 # --- 実行 ---
 with client:
