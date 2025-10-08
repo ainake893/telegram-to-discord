@@ -27,7 +27,7 @@ webhooks = {
     },
     "Basedshills28": {"full": os.getenv("WEBHOOK_BASEDSHILLS")},
     "zeegeneracy": {"full": os.getenv("WEBHOOK_ZEGENERACY")},
-    "PowsGemCalls": {"full": os.getenv("WEBHOOK_POWSGEMCALLS")},
+    "PowsGemCalls": {"full": os.getenv("WEBHOOK_POWSGEMCALLS")}
 }
 
 channels = list(webhooks.keys())
@@ -68,71 +68,77 @@ def auto_summary(text, dt, sender):
     )
     sentences = text.split(". ")
     filtered = [s for s in sentences if re.search(keywords, s, re.IGNORECASE)]
+
     pattern = r"\d+(\.\d+)?\s?(BTC|ETH|USDT|ADA)"
     filtered += [m.group(0) for m in re.finditer(pattern, text)]
+
     if filtered:
         return f"[{dt}] @{sender} [要約] " + " | ".join(filtered)
     return ""
 
-# --- メイン処理 ---
+async def process_channel(channel):
+    last_id = get_last_id(channel)
+    new_last_id = last_id
+
+    messages = []
+    async for message in client.iter_messages(channel, limit=50):
+        if message.id <= last_id:
+            break
+        if message.text:
+            jst_time = message.date.astimezone(JST)
+            formatted_time = jst_time.strftime("%Y-%m-%d %H:%M:%S")
+            sender = (await message.get_sender()).username or "Unknown"
+            messages.append((message.id, message.text, formatted_time, sender))
+
+    if not messages:
+        print(f"[{channel}] 新規メッセージなし")
+        return
+
+    messages.sort(key=lambda x: x[0])
+    new_last_id = max(m[0] for m in messages)
+
+    # --- KudasaiJP だけ summary 生成 ---
+    if channel == "KudasaiJP":
+        summaries = [auto_summary(m[1], m[2], m[3]) for m in messages]
+        summaries = [s for s in summaries if s]
+        if summaries:
+            try:
+                requests.post(webhooks[channel]["summary"], json={"content": "\n".join(summaries[:30])})
+                print(f"[{channel}] summary 送信 OK up to {new_last_id}")
+            except Exception as e:
+                print(f"❌ {channel} summary 送信失敗: {e}")
+
+    # --- 全メッセージを full にまとめて送信 ---
+    full_texts = []
+    for _, text, formatted_time, sender in messages:
+        translated = translate(text)
+        full_texts.append(f"[{formatted_time}] @{sender}:\n{translated}")
+
+    try:
+        chunk_size = 1800
+        chunk = []
+        length = 0
+        for line in full_texts:
+            if length + len(line) + 1 > chunk_size:
+                requests.post(webhooks[channel]["full"], json={"content": "\n".join(chunk)})
+                chunk = []
+                length = 0
+            chunk.append(line)
+            length += len(line) + 1
+        if chunk:
+            requests.post(webhooks[channel]["full"], json={"content": "\n".join(chunk)})
+        print(f"[{channel}] full 送信 OK up to {new_last_id}")
+    except Exception as e:
+        print(f"❌ {channel} full 送信失敗: {e}")
+
+    # --- 最後に last_id 更新 ---
+    update_last_id(channel, new_last_id)
+    print(f"[{channel}] last_id 更新 {new_last_id}")
+
 async def main():
     for channel in channels:
-        last_id = get_last_id(channel)
-        new_last_id = last_id
+        await process_channel(channel)
 
-        messages = []
-        async for message in client.iter_messages(channel, limit=50):
-            if message.id <= last_id:
-                break
-            if message.text:
-                jst_time = message.date.astimezone(JST)
-                formatted_time = jst_time.strftime("%Y-%m-%d %H:%M:%S")
-                sender = (await message.get_sender()).username or "Unknown"
-                formatted = f"[{formatted_time}] @{sender}: {message.text}"
-                messages.append((message.id, formatted, message.text, formatted_time, sender))
-
-        messages.sort(key=lambda x: x[0])
-        if not messages:
-            continue
-
-        # --- 全チャンネルまとめ送信方式 ---
-        if channel == "KudasaiJP":
-            # summary
-            summaries = [auto_summary(m[2], m[3], m[4]) for m in messages]
-            summaries = [s for s in summaries if s]
-            if summaries:
-                try:
-                    requests.post(webhooks[channel]["summary"], json={"content": "\n".join(summaries[:30])})
-                except Exception as e:
-                    print(f"❌ Kudasai Summary送信失敗: {e}")
-
-            # full
-            full_text = "\n\n".join([m[1] for m in messages])
-            if full_text:
-                try:
-                    requests.post(webhooks[channel]["full"], json={"content": full_text[:1900]})
-                except Exception as e:
-                    print(f"❌ Kudasai Full送信失敗: {e}")
-
-        else:
-            # 他チャンネルもまとめ送信
-            full_text = ""
-            for m_id, _, text, formatted_time, sender in messages:
-                translated = translate(text)
-                full_text += f"[{formatted_time}] @{sender}:\n{translated}\n\n"
-
-            if full_text:
-                try:
-                    requests.post(webhooks[channel]["full"], json={"content": full_text[:1900]})
-                except Exception as e:
-                    print(f"❌ {channel} Full送信失敗: {e}")
-
-        # --- 最後にlast_idをまとめて更新 ---
-        new_last_id = max(m[0] for m in messages)
-        update_last_id(channel, new_last_id)
-        print(f"✅ 更新完了: {channel} 最終ID {new_last_id}")
-
-# --- 実行 ---
 with client:
     client.loop.run_until_complete(main())
 
