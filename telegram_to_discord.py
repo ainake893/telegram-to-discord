@@ -1,10 +1,10 @@
 import os
 os.system("pip install telethon requests deep-translator python-dotenv googletrans==4.0.0-rc1 > /dev/null 2>&1")
+
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 import requests
 import re
-import os
 import sqlite3
 from datetime import timezone, timedelta
 from deep_translator import GoogleTranslator
@@ -36,7 +36,7 @@ translator = GoogleTranslator(source="en", target="ja")
 # --- JST ---
 JST = timezone(timedelta(hours=9))
 
-# --- DB ---
+# --- SQLite ---
 DB_PATH = "last_id.db"
 conn = sqlite3.connect(DB_PATH)
 cur = conn.cursor()
@@ -90,12 +90,12 @@ async def main():
                 sender = (await message.get_sender()).username or "Unknown"
                 formatted = f"[{formatted_time}] @{sender}: {message.text}"
                 messages.append((message.id, formatted, message.text, formatted_time, sender))
-                new_last_id = max(new_last_id, message.id)
 
         messages.sort(key=lambda x: x[0])
         if not messages:
             continue
 
+        # --- 各チャンネル送信 ---
         if channel == "KudasaiJP":
             summaries = [auto_summary(m[2], m[3], m[4]) for m in messages]
             summaries = [s for s in summaries if s]
@@ -111,17 +111,22 @@ async def main():
                     requests.post(webhooks["KudasaiJP_full"], json={"content": full_text[:1900]})
                 except Exception as e:
                     print(f"❌ Kudasai Full送信失敗: {e}")
+
+            new_last_id = max(m[0] for m in messages)
+            update_last_id(channel, new_last_id)
+
         else:
-            for _, _, text, formatted_time, sender in messages:
+            # 個別送信 & 即 last_id 更新
+            for msg_id, _, text, formatted_time, sender in messages:
                 try:
                     translated = translate(text)
                     content = f"[{formatted_time}] @{sender}:\n{translated}"
                     requests.post(webhooks[channel], json={"content": content})
+                    update_last_id(channel, msg_id)
+                    new_last_id = msg_id
                 except Exception as e:
                     print(f"❌ 送信失敗 {channel}: {e}")
 
-        # ✅ ここで一括更新
-        update_last_id(channel, new_last_id)
         print(f"✅ 更新完了: {channel} 最終ID {new_last_id}")
 
 # --- 実行 ---
