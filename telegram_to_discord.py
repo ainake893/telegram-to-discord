@@ -1,3 +1,4 @@
+import os
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 import requests
