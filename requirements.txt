@@ -3,3 +3,4 @@ requests
 deep-translator
 python-dotenv
 googletrans==4.0.0-rc1
+psycopg2-binary

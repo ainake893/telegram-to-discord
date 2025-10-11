@@ -3,7 +3,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 import requests
 import re
-import sqlite3
+import psycopg2 # sqlite3 の代わりに psycopg2 をインポート
 from datetime import timezone, timedelta
 from deep_translator import GoogleTranslator
 from dotenv import load_dotenv
@@ -36,20 +36,27 @@ translator = GoogleTranslator(source="en", target="ja")
 # --- JST ---
 JST = timezone(timedelta(hours=9))
 
-# --- DB ---
-DB_PATH = "last_id.db"
-conn = sqlite3.connect(DB_PATH)
+# --- DB (PostgreSQL に完全対応) ---
+DATABASE_URL = os.getenv("DATABASE_URL")
+conn = psycopg2.connect(DATABASE_URL)
 cur = conn.cursor()
-cur.execute("CREATE TABLE IF NOT EXISTS last_ids (channel TEXT PRIMARY KEY, last_id INTEGER)")
+
+# テーブルがなければ作成する (BIGINTは大きな整数を扱える型)
+cur.execute("CREATE TABLE IF NOT EXISTS last_ids (channel VARCHAR(255) PRIMARY KEY, last_id BIGINT)")
 conn.commit()
 
 def get_last_id(channel):
-    cur.execute("SELECT last_id FROM last_ids WHERE channel = ?", (channel,))
+    # SQLのプレースホルダを %s に変更
+    cur.execute("SELECT last_id FROM last_ids WHERE channel = %s", (channel,))
     row = cur.fetchone()
     return row[0] if row else 0
 
 def update_last_id(channel, last_id):
-    cur.execute("INSERT OR REPLACE INTO last_ids (channel, last_id) VALUES (?, ?)", (channel, last_id))
+    # PostgreSQLの構文 INSERT ... ON CONFLICT を使用して、あれば更新、なければ挿入
+    cur.execute("""
+        INSERT INTO last_ids (channel, last_id) VALUES (%s, %s)
+        ON CONFLICT (channel) DO UPDATE SET last_id = EXCLUDED.last_id
+    """, (channel, last_id))
     conn.commit()
 
 def translate(text):
@@ -85,7 +92,11 @@ async def process_channel(channel):
         if message.text:
             jst_time = message.date.astimezone(JST)
             formatted_time = jst_time.strftime("%Y-%m-%d %H:%M:%S")
-            sender = (await message.get_sender()).username or "Unknown"
+
+            # senderがNoneの場合のエラーを回避するコード
+            sender_obj = await message.get_sender()
+            sender = sender_obj.username if sender_obj and sender_obj.username else "Unknown"
+
             messages.append((message.id, message.text, formatted_time, sender))
 
     if not messages:
@@ -101,7 +112,11 @@ async def process_channel(channel):
         summaries = [s for s in summaries if s]
         if summaries:
             try:
-                requests.post(webhooks[channel]["summary"], json={"content": "\n".join(summaries[:30])})
+                # 結合後の文字列が長くなりすぎないように調整
+                content = "\n".join(summaries)
+                if len(content) > 2000:
+                    content = content[:1990] + "..."
+                requests.post(webhooks[channel]["summary"], json={"content": content})
                 print(f"[{channel}] summary 送信 OK up to {new_last_id}")
             except Exception as e:
                 print(f"❌ {channel} summary 送信失敗: {e}")
@@ -113,18 +128,22 @@ async def process_channel(channel):
         full_texts.append(f"[{formatted_time}] @{sender}:\n{translated}")
 
     try:
-        chunk_size = 1800
+        chunk_size = 1900 # Discordの制限を考慮して少し余裕を持たせる
         chunk = []
-        length = 0
+        current_length = 0
         for line in full_texts:
-            if length + len(line) + 1 > chunk_size:
+            line_len = len(line.encode('utf-8')) + 1 # バイト数で計算
+            if current_length + line_len > chunk_size and chunk:
                 requests.post(webhooks[channel]["full"], json={"content": "\n".join(chunk)})
-                chunk = []
-                length = 0
-            chunk.append(line)
-            length += len(line) + 1
+                chunk = [line]
+                current_length = line_len
+            else:
+                chunk.append(line)
+                current_length += line_len
+        
         if chunk:
             requests.post(webhooks[channel]["full"], json={"content": "\n".join(chunk)})
+        
         print(f"[{channel}] full 送信 OK up to {new_last_id}")
     except Exception as e:
         print(f"❌ {channel} full 送信失敗: {e}")
