@@ -19,7 +19,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10' # あなたが使っているPythonのバージョン
+          python-version: '3.10'
 
       # 3. requirements.txt に書かれたライブラリをインストールする
       - name: Install dependencies
@@ -27,7 +27,6 @@ jobs:
 
       # 4. Pythonスクリプトを実行する
       - name: Run Python script
-        # ステップ1で設定した秘密の情報を、ここで環境変数として渡す
         env:
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
@@ -38,5 +37,5 @@ jobs:
           WEBHOOK_BASEDSHILLS: ${{ secrets.WEBHOOK_BASEDSHILLS }}
           WEBHOOK_ZEGENERACY: ${{ secrets.WEBHOOK_ZEGENERACY }}
           WEBHOOK_POWSGEMCALLS: ${{ secrets.WEBHOOK_POWSGEMCALLS }}
-        # ↓↓↓ あなたのPythonファイル名が main.py でない場合は、修正してください ↓↓↓
-        run: python telegram_to_discord
+        # 拡張子 .py を追加しました！
+        run: python telegram_to_discord.py
