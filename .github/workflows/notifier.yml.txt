@@ -1,0 +1,42 @@
+name: Telegram to Discord Notifier
+
+on:
+  # 3時間ごとに実行 (1日8回)
+  schedule:
+    - cron: '0 */3 * * *'
+  # Actionsタブから手動実行もできるようにする
+  workflow_dispatch:
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. リポジトリのコードを仮想環境に持ってくる
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Python環境を準備する
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10' # あなたが使っているPythonのバージョン
+
+      # 3. requirements.txt に書かれたライブラリをインストールする
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # 4. Pythonスクリプトを実行する
+      - name: Run Python script
+        # ステップ1で設定した秘密の情報を、ここで環境変数として渡す
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          SESSION_STRING: ${{ secrets.SESSION_STRING }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          WEBHOOK_KUDASAI_SUMMARY: ${{ secrets.WEBHOOK_KUDASAI_SUMMARY }}
+          WEBHOOK_KUDASAI_FULL: ${{ secrets.WEBHOOK_KUDASAI_FULL }}
+          WEBHOOK_BASEDSHILLS: ${{ secrets.WEBHOOK_BASEDSHILLS }}
+          WEBHOOK_ZEGENERACY: ${{ secrets.WEBHOOK_ZEGENERACY }}
+          WEBHOOK_POWSGEMCALLS: ${{ secrets.WEBHOOK_POWSGEMCALLS }}
+        # ↓↓↓ あなたのPythonファイル名が main.py でない場合は、修正してください ↓↓↓
+        run: python telegram_to_discord
