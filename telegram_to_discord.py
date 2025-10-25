@@ -31,7 +31,8 @@ webhooks = {
 channels = list(webhooks.keys())
 
 # --- 翻訳 ---
-translator = GoogleTranslator(source="en", target="ja")
+# ⚠️ 処理負荷軽減のため、このバージョンでは翻訳を使用しません。
+# translator = GoogleTranslator(source="en", target="ja")
 
 # --- JST ---
 JST = timezone(timedelta(hours=9))
@@ -65,7 +66,7 @@ def load_last_ids_from_gist():
             _last_ids_cache = {}
     except Exception as e:
         print(f"❌ Gistからの読み込みに失敗: {e}")
-        _last_ids_cache = {} # エラー時は空で初期化
+        _last_ids_cache = {} 
 
 def update_gist():
     """メモリ上のIDデータをGistに書き込む"""
@@ -93,10 +94,8 @@ def update_last_id(channel, last_id):
 # --- DB処理ここまで ---
 
 def translate(text):
-    try:
-        return translator.translate(text)
-    except Exception:
-        return f"[翻訳エラー] {text[:200]}..."
+    # ⚠️ 翻訳スキップのため、機能停止
+    return text
 
 def auto_summary(text, dt, sender):
     keywords = (
@@ -111,7 +110,8 @@ def auto_summary(text, dt, sender):
     filtered += [m.group(0) for m in re.finditer(pattern, text)]
 
     if filtered:
-        return f"[{dt}] @{sender} [要約] " + " | ".join(filtered)
+        # 翻訳をスキップしているので、要約も日本語化されません
+        return f"[{dt}] @{sender} [Summary] " + " | ".join(filtered)
     return ""
 
 # --- ★★★ メッセージ取得に制限を追加 (重要) ★★★ ---
@@ -146,6 +146,7 @@ async def process_channel(channel):
                 content = "\n".join(summaries)
                 if len(content) > 2000:
                     content = content[:1990] + "..."
+                # 英語の要約を送信
                 requests.post(webhooks[channel]["summary"], json={"content": content})
                 print(f"[{channel}] summary 送信 OK up to {new_last_id}")
             except Exception as e:
@@ -154,8 +155,8 @@ async def process_channel(channel):
     # --- 全メッセージを full にまとめて送信 ---
     full_texts = []
     for _, text, formatted_time, sender in messages:
-        translated = translate(text)
-        full_texts.append(f"[{formatted_time}] @{sender}:\n{translated}")
+        # ⚠️ 翻訳をスキップし、生のテキスト(英語)をそのまま使用 (負荷軽減のため)
+        full_texts.append(f"[{formatted_time}] @{sender}:\n{text}") 
 
     try:
         chunk_size = 1900
