@@ -1,9 +1,10 @@
 import os
+import requests # Gistのために追加
+import json     # Gistのために追加
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-import requests
 import re
-import psycopg2 # sqlite3 の代わりに psycopg2 をインポート
+# import psycopg2 # ← 削除
 from datetime import timezone, timedelta
 from deep_translator import GoogleTranslator
 from dotenv import load_dotenv
@@ -36,28 +37,61 @@ translator = GoogleTranslator(source="en", target="ja")
 # --- JST ---
 JST = timezone(timedelta(hours=9))
 
-# --- DB (PostgreSQL に完全対応) ---
-DATABASE_URL = os.getenv("DATABASE_URL")
-conn = psycopg2.connect(DATABASE_URL)
-cur = conn.cursor()
+# --- DB (GitHub Gistを利用する方法) ---
+GIST_ID = os.getenv("GIST_ID")
+GIST_TOKEN = os.getenv("GIST_TOKEN")
+GIST_URL = f"https://api.github.com/gists/{GIST_ID}"
+HEADERS = {
+    "Authorization": f"token {GIST_TOKEN}",
+    "Accept": "application/vnd.github.v3+json"
+}
+FILENAME = "last_ids.json"
 
-# テーブルがなければ作成する (BIGINTは大きな整数を扱える型)
-cur.execute("CREATE TABLE IF NOT EXISTS last_ids (channel VARCHAR(255) PRIMARY KEY, last_id BIGINT)")
-conn.commit()
+# グローバル変数でlast_idsをメモリに保持
+_last_ids_cache = {}
+
+def load_last_ids_from_gist():
+    """GistからIDデータを読み込む"""
+    global _last_ids_cache
+    try:
+        res = requests.get(GIST_URL, headers=HEADERS)
+        res.raise_for_status()
+        gist_data = res.json()
+        if FILENAME in gist_data["files"]:
+            content = gist_data["files"][FILENAME]["content"]
+            _last_ids_cache = json.loads(content)
+            print(f"Gistからlast_idsを読み込みました: {_last_ids_cache}")
+        else:
+            print(f"Gistに {FILENAME} が見つかりません。初回実行として扱います。")
+            _last_ids_cache = {}
+    except Exception as e:
+        print(f"❌ Gistからの読み込みに失敗: {e}")
+        _last_ids_cache = {} # エラー時は空で初期化
+
+def update_gist():
+    """メモリ上のIDデータをGistに書き込む"""
+    try:
+        data = {
+            "files": {
+                FILENAME: {
+                    "content": json.dumps(_last_ids_cache, indent=2)
+                }
+            }
+        }
+        res = requests.patch(GIST_URL, headers=HEADERS, json=data)
+        res.raise_for_status()
+        print(f"Gistへのlast_idsの書き込みに成功: {_last_ids_cache}")
+    except Exception as e:
+        print(f"❌ Gistへの書き込みに失敗: {e}")
 
 def get_last_id(channel):
-    # SQLのプレースホルダを %s に変更
-    cur.execute("SELECT last_id FROM last_ids WHERE channel = %s", (channel,))
-    row = cur.fetchone()
-    return row[0] if row else 0
+    """キャッシュから特定のチャンネルのlast_idを取得"""
+    return _last_ids_cache.get(channel, 0)
 
 def update_last_id(channel, last_id):
-    # PostgreSQLの構文 INSERT ... ON CONFLICT を使用して、あれば更新、なければ挿入
-    cur.execute("""
-        INSERT INTO last_ids (channel, last_id) VALUES (%s, %s)
-        ON CONFLICT (channel) DO UPDATE SET last_id = EXCLUDED.last_id
-    """, (channel, last_id))
-    conn.commit()
+    """キャッシュ上の特定のチャンネルのlast_idを更新"""
+    _last_ids_cache[channel] = last_id
+# --- DB処理ここまで ---
 
 def translate(text):
     try:
@@ -81,30 +115,31 @@ def auto_summary(text, dt, sender):
         return f"[{dt}] @{sender} [要約] " + " | ".join(filtered)
     return ""
 
+# --- ★★★ 通知抜け防止ロジックに修正 ★★★ ---
 async def process_channel(channel):
     last_id = get_last_id(channel)
     new_last_id = last_id
 
     messages = []
-    async for message in client.iter_messages(channel, limit=50):
-        if message.id <= last_id:
-            break
+    # offset_id と reverse=True を使い、前回の続きから古い順に全件取得
+    async for message in client.iter_messages(channel, offset_id=last_id, reverse=True):
         if message.text:
             jst_time = message.date.astimezone(JST)
             formatted_time = jst_time.strftime("%Y-%m-%d %H:%M:%S")
 
-            # senderがNoneの場合のエラーを回避するコード
             sender_obj = await message.get_sender()
             sender = sender_obj.username if sender_obj and sender_obj.username else "Unknown"
 
             messages.append((message.id, message.text, formatted_time, sender))
+            # 取得したメッセージの中で一番新しいIDを一時的に保持
+            new_last_id = message.id 
 
     if not messages:
         print(f"[{channel}] 新規メッセージなし")
         return
 
-    messages.sort(key=lambda x: x[0])
-    new_last_id = max(m[0] for m in messages)
+    # reverse=Trueで取得したので、もうソートは不要
+    # messages.sort(key=lambda x: x[0]) ← 削除
 
     # --- KudasaiJP だけ summary 生成 ---
     if channel == "KudasaiJP":
@@ -112,7 +147,6 @@ async def process_channel(channel):
         summaries = [s for s in summaries if s]
         if summaries:
             try:
-                # 結合後の文字列が長くなりすぎないように調整
                 content = "\n".join(summaries)
                 if len(content) > 2000:
                     content = content[:1990] + "..."
@@ -128,11 +162,11 @@ async def process_channel(channel):
         full_texts.append(f"[{formatted_time}] @{sender}:\n{translated}")
 
     try:
-        chunk_size = 1900 # Discordの制限を考慮して少し余裕を持たせる
+        chunk_size = 1900
         chunk = []
         current_length = 0
         for line in full_texts:
-            line_len = len(line.encode('utf-8')) + 1 # バイト数で計算
+            line_len = len(line.encode('utf-8')) + 1
             if current_length + line_len > chunk_size and chunk:
                 requests.post(webhooks[channel]["full"], json={"content": "\n".join(chunk)})
                 chunk = [line]
@@ -148,15 +182,19 @@ async def process_channel(channel):
     except Exception as e:
         print(f"❌ {channel} full 送信失敗: {e}")
 
-    # --- 最後に last_id 更新 ---
+    # --- 最後に last_id 更新 (メモリ上) ---
     update_last_id(channel, new_last_id)
     print(f"[{channel}] last_id 更新 {new_last_id}")
 
+
+# --- ★★★ Gist対応の main 関数 ★★★ ---
 async def main():
+    load_last_ids_from_gist() # 最初にGistからデータを読み込む
     for channel in channels:
         await process_channel(channel)
+    update_gist() # 最後にまとめてGistに書き込む
 
 with client:
     client.loop.run_until_complete(main())
 
-conn.close()
+# conn.close() ← 削除
