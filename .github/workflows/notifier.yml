@@ -38,6 +38,6 @@ jobs:
           WEBHOOK_ZEGENERACY: ${{ secrets.WEBHOOK_ZEGENERACY }}
           WEBHOOK_POWSGEMCALLS: ${{ secrets.WEBHOOK_POWSGEMCALLS }}
           # Gist 接続に必要な環境変数を追加
-          **GIST_ID: ${{ secrets.GIST_ID }}**
-          **GIST_TOKEN: ${{ secrets.GIST_TOKEN }}**
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: python telegram_to_discord.py
