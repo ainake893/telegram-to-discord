@@ -31,8 +31,8 @@ webhooks = {
 channels = list(webhooks.keys())
 
 # --- 翻訳 ---
-# ⚠️ 処理負荷軽減のため、このバージョンでは翻訳を使用しません。
-# translator = GoogleTranslator(source="en", target="ja")
+# ⚠️ 翻訳機能を復旧
+translator = GoogleTranslator(source="en", target="ja")
 
 # --- JST ---
 JST = timezone(timedelta(hours=9))
@@ -43,7 +43,7 @@ GIST_TOKEN = os.getenv("GIST_TOKEN")
 GIST_URL = f"https://api.github.com/gists/{GIST_ID}"
 HEADERS = {
     "Authorization": f"token {GIST_TOKEN}",
-    "Accept": "application/vnd.github.v3+json"
+    "Accept": "application/vnd.github.com"
 }
 FILENAME = "last_ids.json"
 
@@ -94,8 +94,11 @@ def update_last_id(channel, last_id):
 # --- DB処理ここまで ---
 
 def translate(text):
-    # ⚠️ 翻訳スキップのため、機能停止
-    return text
+    try:
+        # ⚠️ 翻訳機能復旧
+        return translator.translate(text)
+    except Exception:
+        return f"[翻訳エラー] {text[:200]}..."
 
 def auto_summary(text, dt, sender):
     keywords = (
@@ -110,17 +113,19 @@ def auto_summary(text, dt, sender):
     filtered += [m.group(0) for m in re.finditer(pattern, text)]
 
     if filtered:
-        # 翻訳をスキップしているので、要約も日本語化されません
-        return f"[{dt}] @{sender} [Summary] " + " | ".join(filtered)
+        # ⚠️ 翻訳機能復旧
+        summary_text = " | ".join(filtered)
+        translated_summary = GoogleTranslator(source="en", target="ja").translate(summary_text)
+        return f"[{dt}] @{sender} [要約] " + translated_summary
     return ""
 
-# --- ★★★ メッセージ取得に制限を追加 (重要) ★★★ ---
+# --- ★★★ メッセージ取得に制限を追加済み ★★★ ---
 async def process_channel(channel):
     last_id = get_last_id(channel)
     new_last_id = last_id
 
     messages = []
-    # offset_id と reverse=True を使い、前回の続きから古い順に最大1000件取得
+    # Gistから取得した最新IDから開始し、最大1000件取得
     async for message in client.iter_messages(channel, offset_id=last_id, reverse=True, limit=1000):
         if message.text:
             jst_time = message.date.astimezone(JST)
@@ -130,7 +135,6 @@ async def process_channel(channel):
             sender = sender_obj.username if sender_obj and sender_obj.username else "Unknown"
 
             messages.append((message.id, message.text, formatted_time, sender))
-            # 取得したメッセージの中で一番新しいIDを一時的に保持
             new_last_id = message.id 
 
     if not messages:
@@ -146,7 +150,6 @@ async def process_channel(channel):
                 content = "\n".join(summaries)
                 if len(content) > 2000:
                     content = content[:1990] + "..."
-                # 英語の要約を送信
                 requests.post(webhooks[channel]["summary"], json={"content": content})
                 print(f"[{channel}] summary 送信 OK up to {new_last_id}")
             except Exception as e:
@@ -155,8 +158,9 @@ async def process_channel(channel):
     # --- 全メッセージを full にまとめて送信 ---
     full_texts = []
     for _, text, formatted_time, sender in messages:
-        # ⚠️ 翻訳をスキップし、生のテキスト(英語)をそのまま使用 (負荷軽減のため)
-        full_texts.append(f"[{formatted_time}] @{sender}:\n{text}") 
+        # ⚠️ 翻訳機能を復旧
+        translated = translate(text)
+        full_texts.append(f"[{formatted_time}] @{sender}:\n{translated}") 
 
     try:
         chunk_size = 1900
