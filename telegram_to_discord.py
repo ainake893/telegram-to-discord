@@ -1,10 +1,9 @@
 import os
-import requests # Gistのために追加
-import json     # Gistのために追加
+import requests 
+import json     
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 import re
-# import psycopg2 # ← 削除
 from datetime import timezone, timedelta
 from deep_translator import GoogleTranslator
 from dotenv import load_dotenv
@@ -115,14 +114,14 @@ def auto_summary(text, dt, sender):
         return f"[{dt}] @{sender} [要約] " + " | ".join(filtered)
     return ""
 
-# --- ★★★ 通知抜け防止ロジックに修正 ★★★ ---
+# --- ★★★ メッセージ取得に制限を追加 (重要) ★★★ ---
 async def process_channel(channel):
     last_id = get_last_id(channel)
     new_last_id = last_id
 
     messages = []
-    # offset_id と reverse=True を使い、前回の続きから古い順に全件取得
-    async for message in client.iter_messages(channel, offset_id=last_id, reverse=True):
+    # offset_id と reverse=True を使い、前回の続きから古い順に最大1000件取得
+    async for message in client.iter_messages(channel, offset_id=last_id, reverse=True, limit=1000):
         if message.text:
             jst_time = message.date.astimezone(JST)
             formatted_time = jst_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -137,9 +136,6 @@ async def process_channel(channel):
     if not messages:
         print(f"[{channel}] 新規メッセージなし")
         return
-
-    # reverse=Trueで取得したので、もうソートは不要
-    # messages.sort(key=lambda x: x[0]) ← 削除
 
     # --- KudasaiJP だけ summary 生成 ---
     if channel == "KudasaiJP":
@@ -187,7 +183,7 @@ async def process_channel(channel):
     print(f"[{channel}] last_id 更新 {new_last_id}")
 
 
-# --- ★★★ Gist対応の main 関数 ★★★ ---
+# --- Gist対応の main 関数 ---
 async def main():
     load_last_ids_from_gist() # 最初にGistからデータを読み込む
     for channel in channels:
@@ -196,5 +192,3 @@ async def main():
 
 with client:
     client.loop.run_until_complete(main())
-
-# conn.close() ← 削除
