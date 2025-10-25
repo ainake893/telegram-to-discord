@@ -31,11 +31,13 @@ jobs:
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           SESSION_STRING: ${{ secrets.SESSION_STRING }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # DATABASE_URL は Gist 移行のため削除
           WEBHOOK_KUDASAI_SUMMARY: ${{ secrets.WEBHOOK_KUDASAI_SUMMARY }}
           WEBHOOK_KUDASAI_FULL: ${{ secrets.WEBHOOK_KUDASAI_FULL }}
           WEBHOOK_BASEDSHILLS: ${{ secrets.WEBHOOK_BASEDSHILLS }}
           WEBHOOK_ZEGENERACY: ${{ secrets.WEBHOOK_ZEGENERACY }}
           WEBHOOK_POWSGEMCALLS: ${{ secrets.WEBHOOK_POWSGEMCALLS }}
-        # 拡張子 .py を追加しました！
+          # Gist 接続に必要な環境変数を追加
+          **GIST_ID: ${{ secrets.GIST_ID }}**
+          **GIST_TOKEN: ${{ secrets.GIST_TOKEN }}**
         run: python telegram_to_discord.py
