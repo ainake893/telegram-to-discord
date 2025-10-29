@@ -31,7 +31,6 @@ webhooks = {
 channels = list(webhooks.keys())
 
 # --- 翻訳 ---
-# ⚠️ 翻訳機能を復旧
 translator = GoogleTranslator(source="en", target="ja")
 
 # --- JST ---
@@ -94,11 +93,14 @@ def update_last_id(channel, last_id):
 # --- DB処理ここまで ---
 
 def translate(text):
+    """翻訳を実行。失敗時にTypeErrorを防ぐため原文を返すように修正。"""
     try:
-        # ⚠️ 翻訳機能復旧
-        return translator.translate(text)
+        translated = translator.translate(text)
+        # 翻訳がNone（失敗）の場合は原文を返す
+        return translated if translated is not None else f"[翻訳失敗] {text}"
     except Exception:
-        return f"[翻訳エラー] {text[:200]}..."
+        # ネットワークエラーなどの場合も原文を返す
+        return f"[翻訳エラー: {text[:50]}...]"
 
 def auto_summary(text, dt, sender):
     keywords = (
@@ -113,9 +115,13 @@ def auto_summary(text, dt, sender):
     filtered += [m.group(0) for m in re.finditer(pattern, text)]
 
     if filtered:
-        # ⚠️ 翻訳機能復旧
         summary_text = " | ".join(filtered)
         translated_summary = GoogleTranslator(source="en", target="ja").translate(summary_text)
+        
+        # ⚠️ 翻訳失敗時にNoneTypeエラーを防ぐ安全策
+        if translated_summary is None:
+            return f"[{dt}] @{sender} [要約] [翻訳失敗のため原文: {summary_text[:100]}...]"
+            
         return f"[{dt}] @{sender} [要約] " + translated_summary
     return ""
 
@@ -158,7 +164,6 @@ async def process_channel(channel):
     # --- 全メッセージを full にまとめて送信 ---
     full_texts = []
     for _, text, formatted_time, sender in messages:
-        # ⚠️ 翻訳機能を復旧
         translated = translate(text)
         full_texts.append(f"[{formatted_time}] @{sender}:\n{translated}") 
 
