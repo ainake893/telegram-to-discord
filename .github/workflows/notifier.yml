@@ -1,10 +1,8 @@
 name: Telegram to Discord Notifier
 
 on:
-  # 3時間ごとに実行 (1日8回)
   schedule:
-    - cron: '0 */3 * * *'
-  # Actionsタブから手動実行もできるようにする
+    - cron: '0 */6 * * *'  # 6時間ごと（例：0時, 6時, 12時, 18時）に実行
   workflow_dispatch:
 
 jobs:
